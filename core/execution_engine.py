@@ -4,7 +4,7 @@ import threading
 
 # Delayed Import to Prevent Circular Import Issues
 def get_order_manager():
-    from core.order_manager import OrderManager
+    from order_manager import OrderManager
     return OrderManager
 
 class ExecutionEngine:

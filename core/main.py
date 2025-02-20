@@ -1,73 +1,72 @@
 import logging
 import sys
-import json
-from core.order_manager import OrderManager
-from core.strategy_engine import StrategyEngine
-from core.risk_manager import RiskManager
-from core.backtester import Backtester
+import os
+import time  
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from order_manager import OrderManager
+from strategy_engine import StrategyEngine
+from risk_manager import RiskManager
+from backtester import Backtester
 from utilities.config_loader import load_config
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("bot.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
+        logging.FileHandler("logs/bot.log"),
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 
 def main():
     logging.info("Starting Trading Bot...")
-    
+
     try:
-        # Load configuration securely
         config = load_config("config/config.json")
-        
-        # Validate configuration
+
         if not config:
             logging.error("Configuration file is missing or invalid.")
             sys.exit(1)
-        
+
         logging.info("Configuration loaded successfully.")
-        
-        # Initialize trading components
+
         order_manager = OrderManager(config)
-        strategy_engine = StrategyEngine(config)
+        strategy_engine = StrategyEngine(config, order_manager)
         risk_manager = RiskManager(config)
         backtester = Backtester(config)
-        
-        logging.info("All modules initialized successfully.")
-        
-        # Backtesting before execution
-        logging.info("Running backtesting...")
-        backtester.run()
+
+        logging.info("Running backtest...")
+        backtester.run_backtest()
         logging.info("Backtesting completed.")
-        
-        # Main trading loop
-        while True:
-            try:
-                # Fetch strategy recommendations
-                trade_signal = strategy_engine.generate_signal()
-                
-                # Evaluate risk before execution
-                if risk_manager.evaluate(trade_signal):
-                    order_manager.execute_trade(trade_signal)
-                    logging.info("Trade executed successfully.")
-                else:
-                    logging.info("Trade did not pass risk assessment. Skipping.")
-            
-            except Exception as e:
-                logging.error(f"Error in trading loop: {e}", exc_info=True)
-                continue  # Continue execution instead of stopping bot
-            
-    except KeyboardInterrupt:
-        logging.info("Trading bot terminated by user.")
-        sys.exit(0)
-    
+
+        logging.info("Starting test & training mode (No real trades)...")
+
+        # 🔹 Disable Signal Generation While Setting Up
+        disable_signals = config["bot_settings"].get("disable_signal_generation", True) 
+
+        iteration = 0
+        max_iterations = 100  # Stops bot after 100 cycles for testing
+        while iteration < max_iterations:
+            if disable_signals:
+                logging.info(f"Iteration {iteration + 1} - Signal generation is disabled during setup.")
+            else:
+                logging.info(f"Iteration {iteration + 1} - Generating trading signals...")
+                signals = strategy_engine.generate_signals()
+                for signal in signals:
+                    if risk_manager.evaluate_risk(signal):
+                        logging.info(f"Simulated trade decision: {signal}")  # No real trades
+
+            iteration += 1
+            time.sleep(5)  # Prevents excessive logging
+
+        logging.info("Training mode completed. Bot shutting down.")
+
     except Exception as e:
-        logging.critical(f"Fatal error in main execution: {e}", exc_info=True)
+        logging.error(f"An error occurred: {e}")
         sys.exit(1)
-    
+
 if __name__ == "__main__":
     main()

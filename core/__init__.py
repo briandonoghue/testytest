@@ -1,22 +1,34 @@
 """
-Core module initialization for TradingBot.
-
-This module includes the execution engine, order management, data handling,
-and trading logic required for automated trading.
+Core package: Handles main trading logic, strategy execution, and risk management.
 """
 
-# Importing key components
-from execution_engine import ExecutionEngine
-from order_manager import OrderManager
-from trade_executor import TradeExecutor
-from config_loader import ConfigLoader
-from logger import Logger
+import logging
 
-# Define what should be available when using `from core import *`
+# Setup logging for core module
+logging.basicConfig(
+    filename="logs/core.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+# Explicitly list available modules
 __all__ = [
-    "ExecutionEngine",
-    "OrderManager",
-    "TradeExecutor",
-    "ConfigLoader",
-    "Logger",
+    "main",
+    "config_loader",
+    "order_manager",
+    "strategy_engine",
+    "risk_manager",
+    "backtester",
+    "market_data",
+    "trade_executor",
+    "portfolio_manager",
+    "data_analyzer",
+    "trade_logger",
+    "notification_manager",
+    "alert_manager",
+    "error_handler",
+    "report_generator",
+    "performance_tracker",
+    "api_connector",
+    "position_manager"
 ]

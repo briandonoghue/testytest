@@ -1,5 +1,5 @@
 import logging
-from core.api_connector import APIConnector
+from api_connector import APIConnector
 
 class OrderManager:
     """ Handles trade execution and order management """

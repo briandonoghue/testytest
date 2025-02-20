@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from fpdf import FPDF
-from core.performance_tracker import PerformanceTracker
+from performance_tracker import PerformanceTracker
 
 class ReportGenerator:
     """ Generates AI Trading Performance Reports """
