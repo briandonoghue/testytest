@@ -1,20 +1,23 @@
 import logging
 import numpy as np
+from utilities.config_loader import load_config
+from core.market_data import MarketData
+from core.performance_tracker import PerformanceTracker
 
 class RiskManager:
-    """ AI-Driven Risk Management System """
+    """ AI-driven risk management and portfolio rebalancing system """
 
-    def __init__(self, max_risk_per_trade=0.02, min_stop_loss=0.005, max_stop_loss=0.03):
+    def __init__(self, config):
         """
-        Initializes risk manager with dynamic risk control.
-
-        :param max_risk_per_trade: Maximum % of balance risked per trade.
-        :param min_stop_loss: Minimum stop-loss %.
-        :param max_stop_loss: Maximum stop-loss %.
+        Initializes the risk manager with AI-based portfolio rebalancing.
+        :param config: Configuration dictionary.
         """
-        self.max_risk_per_trade = max_risk_per_trade
-        self.min_stop_loss = min_stop_loss
-        self.max_stop_loss = max_stop_loss
+        self.config = config
+        self.market_data = MarketData(config)
+        self.performance_tracker = PerformanceTracker(config)
+        self.max_drawdown = config["risk_management"].get("max_drawdown", 5)  # Max loss percentage per asset
+        self.auto_rebalance = config["bot_settings"].get("enable_auto_rebalance", True)
+        self.rebalance_threshold = config["risk_management"].get("rebalance_threshold", 10)  # % deviation threshold
 
         # Setup logging
         logging.basicConfig(
@@ -23,50 +26,78 @@ class RiskManager:
             format="%(asctime)s - %(levelname)s - %(message)s"
         )
 
-    def adjust_risk_based_on_sentiment(self, sentiment_score):
-        """ Adjusts risk level based on AI sentiment analysis. """
-        if sentiment_score < -0.3:  # Negative sentiment (High Risk)
-            risk_multiplier = 0.5  # Reduce position size
-        elif sentiment_score > 0.3:  # Positive sentiment (Low Risk)
-            risk_multiplier = 1.2  # Increase position size slightly
+    def evaluate_risk(self, trade_signal):
+        """
+        Assesses the risk level of a trade before execution.
+        :param trade_signal: Trade signal dictionary.
+        :return: True if the trade passes risk assessment, False otherwise.
+        """
+        symbol = trade_signal["symbol"]
+        quantity = trade_signal["quantity"]
+        current_price = self.market_data.get_latest_price(symbol)
+
+        if current_price is None:
+            logging.warning(f"Risk assessment failed: Market data unavailable for {symbol}")
+            return False
+
+        # Calculate position value
+        position_value = quantity * current_price
+
+        # Check max drawdown limits
+        past_performance = self.performance_tracker.get_trade_log()
+        recent_losses = sum([trade["execution_price"] for trade in past_performance if trade["symbol"] == symbol and trade["pnl"] < 0])
+        if abs(recent_losses) > self.max_drawdown:
+            logging.warning(f"Trade rejected: {symbol} exceeds max drawdown limit.")
+            return False
+
+        logging.info(f"Trade approved: {symbol} passes risk assessment.")
+        return True
+
+    def analyze_portfolio_allocation(self):
+        """
+        Analyzes portfolio allocation across different assets.
+        :return: Dictionary of asset allocations.
+        """
+        trade_log = self.performance_tracker.get_trade_log()
+        allocation = {}
+
+        for trade in trade_log:
+            if trade["symbol"] in allocation:
+                allocation[trade["symbol"]] += abs(trade["execution_price"] * trade["quantity"])
+            else:
+                allocation[trade["symbol"]] = abs(trade["execution_price"] * trade["quantity"])
+
+        total_portfolio_value = sum(allocation.values())
+
+        # Normalize allocations as percentages
+        allocation = {k: round((v / total_portfolio_value) * 100, 2) for k, v in allocation.items() if total_portfolio_value > 0}
+
+        logging.info(f"Current Portfolio Allocation: {allocation}")
+        return allocation
+
+    def rebalance_portfolio(self):
+        """
+        Rebalances portfolio based on AI-driven analysis.
+        """
+        if not self.auto_rebalance:
+            logging.info("AI-driven portfolio rebalancing is disabled.")
+            return
+
+        allocation = self.analyze_portfolio_allocation()
+        ideal_allocation = self.config["risk_management"].get("ideal_allocation", {})
+
+        rebalancing_orders = []
+        for asset, current_allocation in allocation.items():
+            if asset in ideal_allocation:
+                deviation = abs(current_allocation - ideal_allocation[asset])
+                if deviation > self.rebalance_threshold:
+                    # Reduce or increase position to match ideal allocation
+                    adjustment = (ideal_allocation[asset] - current_allocation) / 100
+                    rebalancing_orders.append({"symbol": asset, "adjustment": adjustment})
+
+        if rebalancing_orders:
+            logging.info(f"Portfolio Rebalancing Orders: {rebalancing_orders}")
+            return rebalancing_orders
         else:
-            risk_multiplier = 1.0  # Normal risk
-
-        adjusted_risk = max(self.max_risk_per_trade * risk_multiplier, 0.01)
-        logging.info("Adjusted risk level: %.4f based on sentiment score %.2f", adjusted_risk, sentiment_score)
-        return adjusted_risk
-
-    def calculate_position_size(self, balance, trade_risk, sentiment_score):
-        """ Calculates optimal position size with AI-based risk management. """
-        adjusted_risk = self.adjust_risk_based_on_sentiment(sentiment_score)
-        position_size = (balance * adjusted_risk) / trade_risk
-
-        logging.info("Position size: %.2f units with risk: %.4f", position_size, adjusted_risk)
-        return max(position_size, 1)  
-
-    def determine_stop_loss(self, volatility, sentiment_score):
-        """ Determines stop-loss dynamically based on market conditions. """
-        if sentiment_score < -0.3:  # Negative sentiment
-            stop_loss = self.max_stop_loss  # Wider stop to avoid market noise
-        elif sentiment_score > 0.3:  # Positive sentiment
-            stop_loss = self.min_stop_loss  # Tighter stop for quick profit-taking
-        else:
-            stop_loss = np.clip(volatility * 0.02, self.min_stop_loss, self.max_stop_loss)
-
-        logging.info("AI Stop-Loss set at %.4f", stop_loss)
-        return stop_loss
-
-# Example Usage
-if __name__ == "__main__":
-    risk_manager = RiskManager()
-
-    sentiment = -0.4  # Negative Sentiment
-    balance = 10000
-    trade_risk = 500
-    volatility = 0.015
-
-    position_size = risk_manager.calculate_position_size(balance, trade_risk, sentiment)
-    stop_loss = risk_manager.determine_stop_loss(volatility, sentiment)
-
-    print("AI-Adjusted Position Size:", position_size)
-    print("AI-Adjusted Stop-Loss:", stop_loss)
+            logging.info("No rebalancing needed at this time.")
+            return None

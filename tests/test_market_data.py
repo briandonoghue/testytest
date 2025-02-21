@@ -1,55 +1,67 @@
 import unittest
-from unittest.mock import patch
+import json
 from core.market_data import MarketData
 
 class TestMarketData(unittest.TestCase):
-    def setUp(self):
-        """ Initializes MarketData with a mock API. """
-        self.market_data = MarketData(primary_source="yahoo")
+    """ Unit tests for AI-driven market data accuracy and consistency """
 
-    @patch("core.market_data.requests.get")
-    def test_get_live_price_success(self, mock_get):
-        """ Tests successful live price retrieval. """
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {
-            "chart": {"result": [{"meta": {"regularMarketPrice": 2105.50}}]}
-        }
+    @classmethod
+    def setUpClass(cls):
+        """ Load config and initialize MarketData module """
+        with open("config/config.json", "r") as f:
+            cls.config = json.load(f)
 
-        price = self.market_data.get_live_price("XAUUSD")
-        self.assertAlmostEqual(price, 2105.50, places=2)
+        cls.market_data = MarketData(cls.config)
 
-    @patch("core.market_data.requests.get")
-    def test_get_live_price_failure(self, mock_get):
-        """ Tests handling of API failure. """
-        mock_get.side_effect = Exception("API Down")
+    def test_real_time_data_fetch(self):
+        """ Ensure AI correctly fetches real-time market prices from multiple sources """
+        test_symbol = "BTCUSDT"
+        real_time_price = self.market_data.get_real_time_price(test_symbol)
 
-        price = self.market_data.get_live_price("XAUUSD")
-        self.assertIsNone(price)
+        self.assertIsInstance(real_time_price, float, "Real-time price should return a valid float value")
+        self.assertGreater(real_time_price, 0, "Real-time price should be a positive number")
 
-    @patch("core.market_data.requests.get")
-    def test_get_historical_data_success(self, mock_get):
-        """ Tests historical data retrieval. """
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {
-            "chart": {
-                "result": [{
-                    "timestamp": [1620000000, 1620086400],
-                    "indicators": {"quote": [{"close": [2100.00, 2110.50]}]}
-                }]
-            }
-        }
+    def test_historical_data_consistency(self):
+        """ Validate AI fetches historical market data correctly """
+        test_symbol = "ETHUSDT"
+        historical_data = self.market_data.get_historical_data(test_symbol, period="90d")
 
-        data = self.market_data.get_historical_data("XAUUSD", "1mo")
-        self.assertIsNotNone(data)
-        self.assertEqual(len(data), 2)
+        self.assertIsInstance(historical_data, list, "Historical data should return a list")
+        self.assertGreaterEqual(len(historical_data), 30, "Historical data should have sufficient entries")
 
-    @patch("core.market_data.requests.get")
-    def test_get_historical_data_failure(self, mock_get):
-        """ Tests handling of historical data API failure. """
-        mock_get.side_effect = Exception("API Timeout")
+    def test_missing_data_handling(self):
+        """ Ensure AI can handle missing or corrupted market data """
+        test_symbol = "XAUUSD"
+        corrupted_data = self.market_data.get_historical_data(test_symbol, period="30d")
 
-        data = self.market_data.get_historical_data("XAUUSD", "1mo")
-        self.assertIsNone(data)
+        self.assertIsInstance(corrupted_data, list, "Data response should still return a list")
+        self.assertNotEqual(len(corrupted_data), 0, "AI should handle missing data gracefully and not return an empty set")
+
+    def test_bid_ask_spread_calculation(self):
+        """ Validate AI correctly calculates bid-ask spreads """
+        test_symbol = "PL=F"
+        spread = self.market_data.get_bid_ask_spread(test_symbol)
+
+        self.assertIsInstance(spread, float, "Bid-ask spread should return a float value")
+        self.assertGreaterEqual(spread, 0, "Bid-ask spread should never be negative")
+
+    def test_liquidity_tracking(self):
+        """ Ensure AI correctly determines asset liquidity levels """
+        test_symbol = "BTCUSDT"
+        liquidity_score = self.market_data.get_liquidity_score(test_symbol)
+
+        self.assertIsInstance(liquidity_score, float, "Liquidity score should return a float value")
+        self.assertGreaterEqual(liquidity_score, 0, "Liquidity score should be non-negative")
+        self.assertLessEqual(liquidity_score, 1, "Liquidity score should be normalized between 0 and 1")
+
+    def test_api_fallback_mechanism(self):
+        """ Ensure AI switches to alternate data sources if the primary API fails """
+        test_symbol = "ETHUSDT"
+        price_primary = self.market_data.get_real_time_price(test_symbol, provider="yahoo_finance")
+        price_fallback = self.market_data.get_real_time_price(test_symbol, provider="binance_public_api")
+
+        self.assertNotEqual(price_primary, price_fallback, "Fallback mechanism should provide an alternate price source")
+        self.assertGreater(price_fallback, 0, "Fallback price should still be valid")
 
 if __name__ == "__main__":
     unittest.main()

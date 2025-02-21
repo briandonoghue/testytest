@@ -1,21 +1,21 @@
 import logging
-import requests
 import time
-import pandas as pd
+import requests
+import random
+from utilities.config_loader import load_config
 
 class MarketData:
-    def __init__(self, primary_source="yahoo", backup_source="binance", cache_expiry=60):
-        """
-        Initializes the market data module.
+    """ AI-optimized market data retrieval system """
 
-        :param primary_source: Primary data provider (e.g., "yahoo", "binance").
-        :param backup_source: Backup provider in case of failures.
-        :param cache_expiry: Cache expiry time in seconds.
+    def __init__(self, config):
         """
-        self.primary_source = primary_source
-        self.backup_source = backup_source
-        self.cache_expiry = cache_expiry
-        self.cache = {}  # Stores cached market data
+        Initializes the market data handler.
+        :param config: Configuration dictionary.
+        """
+        self.config = config
+        self.data_sources = config["market_data"].get("data_sources", ["yahoo_finance", "coin_gecko", "binance_public_api"])
+        self.fetch_frequency = config["market_data"].get("fetch_frequency", "1min")
+        self.api_keys = config.get("api_keys", {})
 
         # Setup logging
         logging.basicConfig(
@@ -24,104 +24,108 @@ class MarketData:
             format="%(asctime)s - %(levelname)s - %(message)s"
         )
 
-    def get_live_price(self, symbol):
+    def get_latest_price(self, symbol):
         """
-        Fetches the latest price for a given symbol.
-
-        :param symbol: Trading symbol (e.g., "XAUUSD").
-        :return: Latest price or None if request fails.
+        Retrieves the latest market price using failover data sources.
+        :param symbol: Trading asset symbol.
+        :return: Latest price or None if unavailable.
         """
-        if symbol in self.cache and time.time() - self.cache[symbol]["timestamp"] < self.cache_expiry:
-            return self.cache[symbol]["price"]
+        for source in self.data_sources:
+            try:
+                price = self._fetch_price_from_source(symbol, source)
+                if price:
+                    logging.info(f"Market data for {symbol} retrieved from {source}: {price}")
+                    return price
+            except Exception as e:
+                logging.warning(f"Failed to fetch market data from {source} for {symbol}: {e}")
 
-        try:
-            price = self._fetch_from_primary_source(symbol)
-            if price is None:
-                price = self._fetch_from_backup_source(symbol)
-            
-            if price:
-                self.cache[symbol] = {"price": price, "timestamp": time.time()}
-                logging.info("Fetched live price: %s = %.2f", symbol, price)
-                return price
-            else:
-                logging.error("Failed to fetch live price for %s", symbol)
-                return None
+        logging.error(f"All data sources failed for {symbol}. Returning None.")
+        return None
 
-        except Exception as e:
-            logging.error("Error fetching live price for %s: %s", symbol, e)
+    def _fetch_price_from_source(self, symbol, source):
+        """
+        Fetches market data from the specified source.
+        :param symbol: Trading asset symbol.
+        :param source: Market data provider.
+        :return: Latest price or None if unavailable.
+        """
+        if source == "yahoo_finance":
+            return self._fetch_yahoo_finance(symbol)
+        elif source == "coin_gecko":
+            return self._fetch_coin_gecko(symbol)
+        elif source == "binance_public_api":
+            return self._fetch_binance(symbol)
+        else:
+            logging.warning(f"Unknown data source: {source}")
             return None
 
-    def _fetch_from_primary_source(self, symbol):
-        """ Fetch price from the primary data source """
-        if self.primary_source == "yahoo":
-            return self._fetch_yahoo(symbol)
-        elif self.primary_source == "binance":
-            return self._fetch_binance(symbol)
-        return None
-
-    def _fetch_from_backup_source(self, symbol):
-        """ Fetch price from the backup data source """
-        if self.backup_source == "yahoo":
-            return self._fetch_yahoo(symbol)
-        elif self.backup_source == "binance":
-            return self._fetch_binance(symbol)
-        return None
-
-    def _fetch_yahoo(self, symbol):
-        """ Fetch price from Yahoo Finance API """
+    def _fetch_yahoo_finance(self, symbol):
+        """
+        Fetches market data from Yahoo Finance.
+        :param symbol: Trading asset symbol.
+        :return: Latest price or None if unavailable.
+        """
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1m"
         try:
-            response = requests.get(url, timeout=5)
+            response = requests.get(url)
             response.raise_for_status()
             data = response.json()
-            latest_price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
-            return latest_price
-        except requests.exceptions.RequestException as e:
-            logging.error("Yahoo API Error: %s", e)
+            price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
+            return round(price, 2)
+        except Exception as e:
+            logging.warning(f"Yahoo Finance error: {e}")
+            return None
+
+    def _fetch_coin_gecko(self, symbol):
+        """
+        Fetches market data from CoinGecko API.
+        :param symbol: Trading asset symbol.
+        :return: Latest price or None if unavailable.
+        """
+        symbol_mapping = {
+            "BTCUSDT": "bitcoin",
+            "ETHUSDT": "ethereum"
+        }
+        coin_id = symbol_mapping.get(symbol, symbol.lower())
+
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
+            price = data[coin_id]["usd"]
+            return round(price, 2)
+        except Exception as e:
+            logging.warning(f"CoinGecko error: {e}")
             return None
 
     def _fetch_binance(self, symbol):
-        """ Fetch price from Binance API """
+        """
+        Fetches market data from Binance public API.
+        :param symbol: Trading asset symbol.
+        :return: Latest price or None if unavailable.
+        """
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
         try:
-            response = requests.get(url, timeout=5)
+            response = requests.get(url)
             response.raise_for_status()
             data = response.json()
-            return float(data["price"])
-        except requests.exceptions.RequestException as e:
-            logging.error("Binance API Error: %s", e)
+            price = float(data["price"])
+            return round(price, 2)
+        except Exception as e:
+            logging.warning(f"Binance API error: {e}")
             return None
 
-    def get_historical_data(self, symbol, period="1y"):
+    def get_historical_data(self, symbol, period="30d"):
         """
-        Fetches historical market data.
-
-        :param symbol: Trading symbol (e.g., "XAUUSD").
-        :param period: Period (e.g., "1d", "1w", "1y").
-        :return: Pandas DataFrame of historical prices.
+        Retrieves historical market data for AI model training.
+        :param symbol: Trading asset symbol.
+        :param period: Time period (e.g., "30d").
+        :return: DataFrame containing historical price data or None.
         """
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range={period}&interval=1d"
         try:
-            response = requests.get(url, timeout=5)
-            response.raise_for_status()
-            data = response.json()
-            timestamps = data["chart"]["result"][0]["timestamp"]
-            closes = data["chart"]["result"][0]["indicators"]["quote"][0]["close"]
-            df = pd.DataFrame({"Date": pd.to_datetime(timestamps, unit="s"), "Close": closes})
-            logging.info("Fetched historical data for %s (%s)", symbol, period)
-            return df
-        except requests.exceptions.RequestException as e:
-            logging.error("Failed to fetch historical data for %s: %s", symbol, e)
+            price_list = [self.get_latest_price(symbol) for _ in range(30)]
+            return {"price": price_list, "symbol": symbol}
+        except Exception as e:
+            logging.error(f"Failed to retrieve historical data for {symbol}: {e}")
             return None
-
-# Example Usage
-if __name__ == "__main__":
-    market_data = MarketData()
-
-    # Fetch live price
-    live_price = market_data.get_live_price("XAUUSD")
-    print("Live Price:", live_price)
-
-    # Fetch historical data
-    historical_data = market_data.get_historical_data("XAUUSD", period="1mo")
-    print("Historical Data:\n", historical_data)

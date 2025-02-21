@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Execution Timing - Trading Bot</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        function updateExecutionData() {
+            $.get("/execution_data", function(data) {
+                let executionTable = "";
+                data.forEach(execution => {
+                    executionTable += `<tr>
+                        <td>${execution.symbol}</td>
+                        <td>${execution.order_type}</td>
+                        <td>${execution.execution_delay}s</td>
+                        <td>${(execution.confidence * 100).toFixed(2)}%</td>
+                        <td>${execution.timestamp}</td>
+                    </tr>`;
+                });
+                $("#execution_table tbody").html(executionTable);
+                updateExecutionChart(data);
+            });
+        }
+
+        function updateExecutionChart(data) {
+            let ctx = document.getElementById("executionChart").getContext("2d");
+            let labels = data.map(exec => exec.symbol);
+            let delays = data.map(exec => exec.execution_delay);
+            let confidences = data.map(exec => exec.confidence * 100);
+
+            new Chart(ctx, {
+                type: "bar",
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: "Execution Delay (Seconds)",
+                        data: delays,
+                        backgroundColor: "blue"
+                    }, {
+                        label: "AI Confidence (%)",
+                        data: confidences,
+                        backgroundColor: "green"
+                    }]
+                }
+            });
+        }
+
+        $(document).ready(function() {
+            updateExecutionData();
+            setInterval(updateExecutionData, 30000);
+        });
+    </script>
+</head>
+<body>
+    <h1>AI Trade Execution Timing</h1>
+
+    <h2>Recent Executions</h2>
+    <table id="execution_table" border="1">
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Order Type</th>
+                <th>Execution Delay</th>
+                <th>AI Confidence</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <h2>Execution Performance</h2>
+    <canvas id="executionChart" width="400" height="200"></canvas>
+</body>
+</html>

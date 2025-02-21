@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Performance Report - Trading Bot</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        function updatePerformanceMetrics() {
+            $.get("/performance_metrics", function(data) {
+                $("#total_profit").text("Total Profit: $" + data["Total Profit"]);
+                $("#max_drawdown").text("Max Drawdown: " + data["Max Drawdown"] + "%");
+                $("#win_rate").text("Win Rate: " + data["Win Rate"] + "%");
+                $("#profit_factor").text("Profit Factor: " + data["Profit Factor"]);
+                $("#ai_accuracy").text("AI Accuracy: " + data["AI Accuracy"] + "%");
+
+                updatePerformanceChart(data);
+            });
+        }
+
+        function updatePerformanceChart(data) {
+            let ctx = document.getElementById("performanceChart").getContext("2d");
+
+            new Chart(ctx, {
+                type: "bar",
+                data: {
+                    labels: ["Win Rate (%)", "Profit Factor", "Total Profit ($)", "Max Drawdown (%)", "AI Accuracy (%)"],
+                    datasets: [{
+                        label: "AI Trading Performance",
+                        data: [data["Win Rate"], data["Profit Factor"], data["Total Profit"], data["Max Drawdown"], data["AI Accuracy"]],
+                        backgroundColor: ["green", "blue", "orange", "red", "purple"]
+                    }]
+                }
+            });
+        }
+
+        $(document).ready(function() {
+            updatePerformanceMetrics();
+            setInterval(updatePerformanceMetrics, 20000);
+        });
+    </script>
+</head>
+<body>
+    <h1>AI Trading Performance Report</h1>
+
+    <h2>Performance Metrics</h2>
+    <p id="total_profit">Total Profit: Loading...</p>
+    <p id="max_drawdown">Max Drawdown: Loading...</p>
+    <p id="win_rate">Win Rate: Loading...</p>
+    <p id="profit_factor">Profit Factor: Loading...</p>
+    <p id="ai_accuracy">AI Accuracy: Loading...</p>
+
+    <h2>Performance Visualization</h2>
+    <canvas id="performanceChart" width="400" height="200"></canvas>
+</body>
+</html>

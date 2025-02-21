@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Trading Bot Dashboard</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        function updatePortfolioAllocation() {
+            $.get("/portfolio_allocation", function (data) {
+                let labels = [];
+                let allocations = [];
+                let rebalancingRecommendations = "";
+
+                Object.keys(data).forEach(asset => {
+                    labels.push(asset);
+                    allocations.push(data[asset]);
+                });
+
+                new Chart(document.getElementById("portfolioChart"), {
+                    type: "pie",
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: allocations,
+                            backgroundColor: ["blue", "green", "orange", "red", "purple"]
+                        }]
+                    }
+                });
+
+                $.get("/rebalancing_recommendations", function (rebalancingData) {
+                    rebalancingData.forEach(rebalancing => {
+                        rebalancingRecommendations += `<tr>
+                                <td>${rebalancing.symbol}</td>
+                                <td>${rebalancing.adjustment > 0 ? "Increase" : "Decrease"}</td>
+                                <td>${Math.abs(rebalancing.adjustment * 100).toFixed(2)}%</td>
+                                <td><button onclick="approveRebalance('${rebalancing.symbol}', ${rebalancing.adjustment})">Approve</button></td>
+                            </tr>`;
+                    });
+                    $("#rebalancing_table tbody").html(rebalancingRecommendations);
+                });
+            });
+        }
+
+        function approveRebalance(symbol, adjustment) {
+            $.get(`/approve_rebalance/${symbol}/${adjustment}`, function (data) {
+                alert("Rebalancing Executed: " + JSON.stringify(data));
+                updatePortfolioAllocation();
+            });
+        }
+
+        $(document).ready(function () {
+            updatePortfolioAllocation();
+            setInterval(updatePortfolioAllocation, 30000);
+        });
+    </script>
+</head>
+<body>
+    <h1>AI Trading Bot Dashboard</h1>
+
+    <h2>Portfolio Allocation</h2>
+    <canvas id="portfolioChart" width="400" height="200"></canvas>
+
+    <h2>AI-Driven Rebalancing Recommendations</h2>
+    <table id="rebalancing_table" border="1">
+        <thead>
+            <tr>
+                <th>Asset</th>
+                <th>Action</th>
+                <th>Adjustment (%)</th>
+                <th>Approve</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</body>
+</html>

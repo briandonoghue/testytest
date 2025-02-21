@@ -1,87 +1,105 @@
 import logging
 import threading
 import time
-import tkinter as tk
-from tkinter import scrolledtext
-from market_data import MarketData
-from position_manager import PositionManager
+import pandas as pd
+import json
+from flask import Flask, render_template, jsonify
+from core.performance_tracker import PerformanceTracker
+from core.market_data import MarketData
+from core.trade_executor import TradeExecutor
+from core.risk_manager import RiskManager
+from core.order_manager import OrderManager
+from utilities.config_loader import load_config
 
-class TradingDashboard:
-    def __init__(self, root, market_data, position_manager):
-        """
-        Initializes the trading dashboard.
+# Initialize Flask app
+app = Flask(__name__)
 
-        :param root: Tkinter root window.
-        :param market_data: Instance of MarketData for live updates.
-        :param position_manager: Instance of PositionManager for position tracking.
-        """
-        self.root = root
-        self.market_data = market_data
-        self.position_manager = position_manager
-        self.root.title("Trading Bot Dashboard")
-        self.root.geometry("800x600")
+# Load configuration
+config = load_config("config/config.json")
 
-        # Live Price Display
-        self.price_label = tk.Label(root, text="Live Price: Loading...", font=("Arial", 14))
-        self.price_label.pack(pady=10)
+# Initialize components
+performance_tracker = PerformanceTracker(config)
+market_data = MarketData(config)
+trade_executor = TradeExecutor(config)
+risk_manager = RiskManager(config)
+order_manager = OrderManager(config)
 
-        # Trade History Log
-        self.trade_log = scrolledtext.ScrolledText(root, width=80, height=15)
-        self.trade_log.pack(pady=10)
-        self.trade_log.insert(tk.END, "Trade log initialized...\n")
-        self.trade_log.config(state=tk.DISABLED)
+# Setup logging
+logging.basicConfig(
+    filename="logs/dashboard.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-        # Error Log Display
-        self.error_log = scrolledtext.ScrolledText(root, width=80, height=5, fg="red")
-        self.error_log.pack(pady=10)
-        self.error_log.insert(tk.END, "Error log initialized...\n")
-        self.error_log.config(state=tk.DISABLED)
+@app.route("/")
+def home():
+    """ Renders the AI trading dashboard. """
+    return render_template("index.html")
 
-        # Start background updates
-        self.update_dashboard()
+@app.route("/performance")
+def get_performance_data():
+    """ Returns AI trading performance metrics for visualization. """
+    report = performance_tracker.generate_performance_report()
+    return jsonify(report)
 
-    def update_dashboard(self):
-        """ Updates the dashboard with live market data and trade activity. """
-        threading.Thread(target=self._update_price, daemon=True).start()
-        threading.Thread(target=self._update_trade_log, daemon=True).start()
-        threading.Thread(target=self._update_error_log, daemon=True).start()
+@app.route("/market_data/<symbol>")
+def get_market_data(symbol):
+    """ Returns real-time market price of an asset. """
+    price = market_data.get_latest_price(symbol)
+    return jsonify({"symbol": symbol, "price": price})
 
-    def _update_price(self):
-        """ Updates live market price in UI. """
-        while True:
-            price = self.market_data.get_live_price("XAUUSD")
-            self.price_label.config(text=f"Live Price: ${price:.2f}")
-            time.sleep(5)
+@app.route("/trade/<symbol>/<action>/<quantity>")
+def execute_trade(symbol, action, quantity):
+    """ Manually execute a trade from the dashboard. """
+    trade_signal = {
+        "symbol": symbol,
+        "action": action,
+        "quantity": float(quantity),
+        "price": market_data.get_latest_price(symbol)
+    }
+    execution_result = trade_executor.execute_order(trade_signal)
+    return jsonify(execution_result)
 
-    def _update_trade_log(self):
-        """ Updates trade history log dynamically. """
-        while True:
-            with open("logs/trade_history.csv", "r") as file:
-                trades = file.readlines()
+@app.route("/trade_history")
+def get_trade_history():
+    """ Fetches executed trade history for visualization. """
+    try:
+        with open("logs/trade_log.json", "r") as f:
+            trade_history = json.load(f)
+        return jsonify(trade_history)
+    except Exception as e:
+        logging.error(f"Error retrieving trade history: {e}")
+        return jsonify([])
 
-            self.trade_log.config(state=tk.NORMAL)
-            self.trade_log.delete("1.0", tk.END)
-            self.trade_log.insert(tk.END, "".join(trades[-10:]))  # Show last 10 trades
-            self.trade_log.config(state=tk.DISABLED)
-            time.sleep(5)
+@app.route("/ai_trade_confidence")
+def get_ai_trade_confidence():
+    """ Retrieves AI confidence levels for the latest trade signals. """
+    try:
+        with open("logs/trade_log.json", "r") as f:
+            trade_history = json.load(f)
+        
+        confidence_scores = [{"symbol": trade["symbol"], "confidence": trade.get("confidence", 0.5)} for trade in trade_history]
+        return jsonify(confidence_scores)
+    except Exception as e:
+        logging.error(f"Error retrieving AI trade confidence levels: {e}")
+        return jsonify([])
 
-    def _update_error_log(self):
-        """ Updates error log dynamically. """
-        while True:
-            with open("logs/error_handler.log", "r") as file:
-                errors = file.readlines()
+@app.route("/risk_exposure")
+def get_risk_exposure():
+    """ Retrieves AI-calculated risk exposure across all assets. """
+    portfolio_risk = risk_manager.calculate_portfolio_risk()
+    return jsonify(portfolio_risk)
 
-            self.error_log.config(state=tk.NORMAL)
-            self.error_log.delete("1.0", tk.END)
-            self.error_log.insert(tk.END, "".join(errors[-5:]))  # Show last 5 errors
-            self.error_log.config(state=tk.DISABLED)
-            time.sleep(5)
+def run_dashboard():
+    """ Starts the Flask dashboard server. """
+    app.run(host="0.0.0.0", port=config["dashboard"].get("port", 8080), debug=False, threaded=True)
 
-# Example Usage
+# Run dashboard in a separate thread
+dashboard_thread = threading.Thread(target=run_dashboard)
+dashboard_thread.daemon = True
+dashboard_thread.start()
+
 if __name__ == "__main__":
-    market_data = MarketData()
-    position_manager = PositionManager(market_data, None)
-
-    root = tk.Tk()
-    dashboard = TradingDashboard(root, market_data, position_manager)
-    root.mainloop()
+    logging.info("Starting AI Trading Bot Dashboard...")
+    while True:
+        time.sleep(10)  # Keeps the script running

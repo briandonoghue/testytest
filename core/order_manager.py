@@ -1,16 +1,24 @@
 import logging
-from api_connector import APIConnector
+import numpy as np
+from core.trade_executor import TradeExecutor
+from core.risk_manager import RiskManager
+from ml.ai_strategy_optimizer import AIStrategyOptimizer
 
 class OrderManager:
-    """ Handles trade execution and order management """
+    """ Manages AI-driven trade execution and confidence-weighted position sizing. """
 
-    def __init__(self, api_connector):
+    def __init__(self, config):
         """
-        Initializes OrderManager with a broker API connector.
-        
-        :param api_connector: Instance of APIConnector for trade execution.
+        Initializes the order manager.
+        :param config: Configuration dictionary.
         """
-        self.api_connector = api_connector
+        self.config = config
+        self.trade_executor = TradeExecutor(config)
+        self.risk_manager = RiskManager(config)
+        self.ai_optimizer = AIStrategyOptimizer(config)
+        self.max_open_trades = config["trading_settings"].get("max_trades_per_cycle", 3)
+        self.base_trade_size = config["bot_settings"].get("trade_size", 0.1)
+        self.max_trade_risk = config["bot_settings"].get("max_trade_risk", 0.02)
 
         # Setup logging
         logging.basicConfig(
@@ -19,49 +27,73 @@ class OrderManager:
             format="%(asctime)s - %(levelname)s - %(message)s"
         )
 
-    def execute_order(self, symbol, quantity, order_type="market", price=None):
+    def _calculate_position_size(self, trade_signal):
         """
-        Places a trade order.
-        
-        :param symbol: Trading symbol (e.g., "XAUUSD").
-        :param quantity: Trade size.
-        :param order_type: Order type ("market" or "limit").
-        :param price: Price for limit orders (optional).
-        :return: Order execution result.
+        Dynamically calculates trade size based on AI confidence.
+        :param trade_signal: Trade signal dictionary.
+        :return: Adjusted position size.
         """
-        try:
-            if quantity <= 0:
-                raise ValueError("Trade quantity must be positive.")
+        confidence = trade_signal.get("confidence", 0.5)  # Default confidence if missing
 
-            if order_type == "limit" and price is None:
-                raise ValueError("Limit orders require a price.")
+        # Scale trade size based on AI confidence
+        trade_size = self.base_trade_size * (1 + (confidence - 0.5) * 2)
 
-            order = {
-                "symbol": symbol,
-                "quantity": quantity,
-                "order_type": order_type,
-                "price": price
-            }
+        # Ensure trade size does not exceed max trade risk
+        max_allowed_size = self.max_trade_risk * self.config["bot_settings"].get("max_trade_risk", 0.02)
+        adjusted_trade_size = min(trade_size, max_allowed_size)
 
-            response = self.api_connector.place_order(order)
-            
-            if response.get("status") == "filled":
-                logging.info("Trade executed: %s, Quantity: %s, Type: %s, Price: %s",
-                             symbol, quantity, order_type, price)
-            else:
-                logging.warning("Trade execution failed: %s", response)
+        logging.info(f"AI-Weighted Position Size for {trade_signal['symbol']}: {adjusted_trade_size:.4f} (Confidence: {confidence:.2f})")
+        return adjusted_trade_size
 
-            return response
+    def execute_trade_signal(self, trade_signal):
+        """
+        Validates and executes trade orders with AI-driven adjustments.
+        :param trade_signal: Dictionary containing trade details.
+        :return: Execution result or None if rejected.
+        """
+        if not trade_signal:
+            logging.warning("Received an empty trade signal, skipping execution.")
+            return None
 
-        except Exception as e:
-            logging.error("Trade execution error: %s", e)
-            return {"status": "failed", "reason": str(e)}
+        symbol = trade_signal["symbol"]
+        action = trade_signal["action"]
+        confidence = trade_signal.get("confidence", 0.5)
 
-# Example Usage
-if __name__ == "__main__":
-    api_connector = APIConnector()
-    order_manager = OrderManager(api_connector)
+        # Risk evaluation
+        if not self.risk_manager.evaluate_risk(trade_signal):
+            logging.warning(f"Trade rejected due to risk controls: {trade_signal}")
+            return None
 
-    # Simulate a trade
-    result = order_manager.execute_order("XAUUSD", 1, "market")
-    print("Trade Result:", result)
+        # Adjust trade size dynamically based on AI confidence
+        trade_signal["quantity"] = self._calculate_position_size(trade_signal)
+
+        # Execute trade
+        execution_result = self.trade_executor.execute_order(trade_signal)
+        if execution_result:
+            logging.info(f"Trade Executed: {execution_result}")
+            return execution_result
+
+        logging.error(f"Trade execution failed for {symbol}.")
+        return None
+
+    def process_trade_batch(self, trade_signals):
+        """
+        Processes a batch of trade signals, prioritizing high-confidence trades.
+        :param trade_signals: List of trade signal dictionaries.
+        :return: List of executed trades.
+        """
+        if not trade_signals:
+            logging.info("No trade signals to process.")
+            return []
+
+        # Sort trade signals by AI confidence score (highest first)
+        trade_signals.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+
+        executed_trades = []
+        for trade_signal in trade_signals[:self.max_open_trades]:  # Limit per cycle
+            execution_result = self.execute_trade_signal(trade_signal)
+            if execution_result:
+                executed_trades.append(execution_result)
+
+        logging.info(f"Processed {len(executed_trades)} trades this cycle.")
+        return executed_trades

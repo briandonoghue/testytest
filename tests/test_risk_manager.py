@@ -1,47 +1,66 @@
 import unittest
+import json
 from core.risk_manager import RiskManager
+from core.market_data import MarketData
 
 class TestRiskManager(unittest.TestCase):
-    def setUp(self):
-        """ Initializes RiskManager with default settings. """
-        self.risk_manager = RiskManager(max_risk_per_trade=0.02, stop_loss_pct=0.01, take_profit_pct=0.03)
+    """ Unit tests for AI-driven risk management system """
 
-    def test_calculate_position_size_valid(self):
-        """ Tests valid position size calculation. """
-        portfolio_value = 100000
-        trade_risk = 500
-        position_size = self.risk_manager.calculate_position_size(portfolio_value, trade_risk)
+    @classmethod
+    def setUpClass(cls):
+        """ Load config and initialize RiskManager """
+        with open("config/risk_settings.json", "r") as f:
+            cls.config = json.load(f)
 
-        self.assertGreater(position_size, 0)
-        self.assertLessEqual(position_size, portfolio_value * self.risk_manager.max_risk_per_trade / trade_risk)
+        cls.risk_manager = RiskManager(cls.config)
+        cls.market_data = MarketData(cls.config)
 
-    def test_calculate_position_size_invalid(self):
-        """ Tests handling of invalid trade risk values. """
-        portfolio_value = 100000
-        trade_risk = -500  # Negative risk
-        position_size = self.risk_manager.calculate_position_size(portfolio_value, trade_risk)
+    def test_stop_loss_calculation(self):
+        """ Ensure AI correctly calculates stop-loss levels """
+        trade_signal = {"symbol": "BTCUSDT", "price": 50000, "quantity": 1}
+        adjusted_trade = self.risk_manager.analyze_trade_risk(trade_signal)
 
-        self.assertEqual(position_size, 0)
+        self.assertIsNotNone(adjusted_trade, "Trade risk analysis failed")
+        self.assertGreater(adjusted_trade["stop_loss"], 0, "Stop-loss should be positive")
+        self.assertLess(adjusted_trade["stop_loss"], trade_signal["price"], "Stop-loss should be below entry price")
 
-    def test_apply_risk_controls_valid_order(self):
-        """ Tests risk-adjusted order validation. """
-        portfolio_value = 100000
-        order = {"symbol": "XAUUSD", "quantity": 10, "price": 2100.00, "type": "buy"}
-        adjusted_order = self.risk_manager.apply_risk_controls(order, portfolio_value)
+    def test_take_profit_calculation(self):
+        """ Ensure AI correctly calculates take-profit levels """
+        trade_signal = {"symbol": "ETHUSDT", "price": 3000, "quantity": 2}
+        adjusted_trade = self.risk_manager.analyze_trade_risk(trade_signal)
 
-        self.assertIsNotNone(adjusted_order)
-        self.assertGreater(adjusted_order["stop_loss"], 0)
-        self.assertGreater(adjusted_order["take_profit"], 0)
+        self.assertIsNotNone(adjusted_trade, "Trade risk analysis failed")
+        self.assertGreater(adjusted_trade["take_profit"], trade_signal["price"], "Take-profit should be above entry price")
 
-    def test_apply_risk_controls_exceeds_risk(self):
-        """ Tests handling of trades exceeding risk limits. """
-        portfolio_value = 10000
-        order = {"symbol": "XAUUSD", "quantity": 500, "price": 2100.00, "type": "buy"}  # Too large
+    def test_dynamic_risk_adjustment(self):
+        """ Validate AI adapts risk levels based on market volatility """
+        portfolio_allocation = {
+            "BTCUSDT": 40.0,
+            "ETHUSDT": 30.0,
+            "XAUUSD": 15.0,
+            "PL=F": 15.0
+        }
 
-        adjusted_order = self.risk_manager.apply_risk_controls(order, portfolio_value)
+        adjusted_allocation = self.risk_manager.adjust_risk_levels(portfolio_allocation)
 
-        self.assertIsNotNone(adjusted_order)
-        self.assertLessEqual(adjusted_order["quantity"], portfolio_value * self.risk_manager.max_risk_per_trade)
+        for asset, allocation in adjusted_allocation.items():
+            self.assertLessEqual(allocation, portfolio_allocation[asset], "Risk-adjusted allocation should not exceed original")
+
+    def test_rebalancing_logic(self):
+        """ Ensure AI correctly triggers rebalancing when required """
+        portfolio_allocation = {
+            "BTCUSDT": 50.0,  # High allocation
+            "ETHUSDT": 20.0,
+            "XAUUSD": 10.0,
+            "PL=F": 20.0
+        }
+
+        rebalancing_orders = self.risk_manager.rebalance_portfolio()
+        self.assertIsNotNone(rebalancing_orders, "Rebalancing should not return None")
+
+        for order in rebalancing_orders:
+            self.assertIn(order["symbol"], portfolio_allocation.keys(), "Rebalancing should only adjust existing assets")
+            self.assertTrue(-0.1 <= order["adjustment"] <= 0.1, "Rebalancing adjustment should be within limits")
 
 if __name__ == "__main__":
     unittest.main()

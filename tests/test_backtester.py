@@ -1,86 +1,60 @@
 import unittest
-import pandas as pd
+import json
 from core.backtester import Backtester
-from config.config import load_config
 
 class TestBacktester(unittest.TestCase):
-    """Unit tests for the Backtester module"""
+    """ Unit tests for AI-powered backtesting system """
 
     @classmethod
     def setUpClass(cls):
-        """Initialize test dependencies before running tests"""
-        config = load_config()
-        cls.backtester = Backtester()
-        cls.test_symbol = "GC=F"  # Gold futures for testing
+        """ Load config and initialize Backtester """
+        with open("config/config.json", "r") as f:
+            cls.config = json.load(f)
 
-        # Sample historical data for backtesting
-        cls.sample_data = pd.DataFrame({
-            "Date": pd.date_range(start="2023-01-01", periods=5, freq="D"),
-            "Open": [1800, 1820, 1840, 1860, 1880],
-            "High": [1820, 1840, 1860, 1880, 1900],
-            "Low": [1790, 1810, 1830, 1850, 1870],
-            "Close": [1810, 1830, 1850, 1870, 1890],
-            "Volume": [1000, 1200, 1400, 1600, 1800]
-        })
-        cls.sample_data.set_index("Date", inplace=True)
+        cls.backtester = Backtester(cls.config)
 
-    def test_backtest_execution(self):
-        """Test running a backtest on historical data"""
-        print("\n🔍 Running test: Backtest Execution")
-        results = self.backtester.run_backtest(
-            asset_symbol=self.test_symbol,
-            historical_data=self.sample_data,
-            strategy_name="SMA_Crossover"
-        )
-        self.assertIsInstance(results, dict, "❌ Backtest did not return expected dictionary.")
-        self.assertIn("final_balance", results, "❌ Missing final balance in backtest results.")
+    def test_backtest_trade_execution(self):
+        """ Ensure AI executes backtest trades correctly using historical data """
+        test_asset = "BTCUSDT"
+        backtest_result = self.backtester.run_backtest(test_asset, period="180d")
 
-    def test_performance_metrics(self):
-        """Test calculating performance metrics"""
-        print("\n🔍 Running test: Performance Metrics Calculation")
-        performance = self.backtester.calculate_performance_metrics(
-            initial_balance=10000,
-            trade_history=[
-                {"trade_type": "BUY", "price": 1800, "quantity": 1},
-                {"trade_type": "SELL", "price": 1850, "quantity": 1}
-            ]
-        )
-        self.assertIsInstance(performance, dict, "❌ Performance metrics should return a dictionary.")
-        self.assertIn("profit_loss", performance, "❌ Profit/Loss missing in results.")
-        self.assertGreaterEqual(performance["profit_loss"], 0, "❌ Profit/Loss calculation incorrect.")
+        self.assertIsInstance(backtest_result, dict, "Backtest result should return a dictionary")
+        self.assertIn("total_pnl", backtest_result, "Backtest result should contain 'total_pnl'")
+        self.assertIn("win_rate", backtest_result, "Backtest result should contain 'win_rate'")
 
-    def test_risk_adjusted_return(self):
-        """Test calculating Sharpe ratio and other risk-adjusted returns"""
-        print("\n🔍 Running test: Risk-Adjusted Returns")
-        sharpe_ratio = self.backtester.calculate_sharpe_ratio(
-            returns=[0.01, 0.02, -0.01, 0.03, -0.02]
-        )
-        self.assertIsInstance(sharpe_ratio, float, "❌ Sharpe Ratio should be a float.")
-        self.assertGreater(sharpe_ratio, -5, "❌ Sharpe Ratio is unrealistic.")
+    def test_backtest_profitability(self):
+        """ Validate AI calculates backtest profitability correctly """
+        test_asset = "ETHUSDT"
+        backtest_result = self.backtester.run_backtest(test_asset, period="90d")
 
-    def test_invalid_strategy(self):
-        """Test handling of invalid strategy names"""
-        print("\n🔍 Running test: Invalid Strategy Handling")
-        results = self.backtester.run_backtest(
-            asset_symbol=self.test_symbol,
-            historical_data=self.sample_data,
-            strategy_name="INVALID_STRATEGY"
-        )
-        self.assertIsNone(results, "❌ Invalid strategy should return None.")
+        self.assertGreaterEqual(backtest_result["total_pnl"], -1000, "Backtest total profit should not be extremely negative")
+        self.assertGreaterEqual(backtest_result["win_rate"], 0, "Win rate should not be negative")
 
-    def test_trade_logging(self):
-        """Test if backtesting trades are logged correctly"""
-        print("\n🔍 Running test: Backtest Trade Logging")
-        trade = {
-            "trade_type": "BUY",
-            "price": 1810,
-            "quantity": 1,
-            "timestamp": "2023-01-01 12:00:00"
-        }
-        self.backtester.log_trade(trade)
-        with open("logs/backtest_logs.txt", "r") as log_file:
-            logs = log_file.readlines()
-        self.assertTrue(any(str(trade["timestamp"]) in log for log in logs), "❌ Trade log missing.")
+    def test_ai_historical_trade_accuracy(self):
+        """ Ensure AI trades in backtests closely match historical patterns """
+        test_asset = "XAUUSD"
+        historical_performance = self.backtester.validate_historical_trade_accuracy(test_asset, period="120d")
+
+        self.assertIsInstance(historical_performance, dict, "Historical trade accuracy should return a dictionary")
+        self.assertIn("accuracy", historical_performance, "Trade accuracy should include 'accuracy'")
+        self.assertGreaterEqual(historical_performance["accuracy"], 60, "AI backtest accuracy should be at least 60%")
+
+    def test_risk_adjustment_during_backtest(self):
+        """ Validate AI correctly adjusts risk settings in backtests """
+        test_asset = "PL=F"
+        backtest_result = self.backtester.run_backtest(test_asset, period="60d")
+
+        self.assertIn("risk_level", backtest_result, "Backtest should include AI-adjusted risk levels")
+        self.assertGreaterEqual(backtest_result["risk_level"], 0, "Risk level should be non-negative")
+
+    def test_backtest_report_generation(self):
+        """ Ensure AI generates a detailed backtest report after simulation """
+        test_asset = "BTCUSDT"
+        report = self.backtester.generate_backtest_report(test_asset)
+
+        self.assertIsInstance(report, dict, "Backtest report should return a dictionary")
+        self.assertIn("performance_summary", report, "Backtest report should include performance summary")
+        self.assertGreaterEqual(len(report["trade_details"]), 5, "Backtest report should include multiple trades for analysis")
 
 if __name__ == "__main__":
     unittest.main()

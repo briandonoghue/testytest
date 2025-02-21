@@ -1,17 +1,22 @@
 ﻿import logging
+import json
+import os
 import pandas as pd
-import numpy as np
 
 class PerformanceTracker:
-    """ Tracks AI trading performance and risk metrics """
+    """ Tracks AI trading performance, strategy success rates, and risk-adjusted returns. """
 
-    def __init__(self, trade_log_file="logs/trade_history.csv"):
+    def __init__(self, config):
         """
-        Initializes Performance Tracker.
+        Initializes the AI-driven performance tracker.
+        :param config: Configuration dictionary.
+        """
+        self.config = config
+        self.trade_log_file = "logs/trade_log.json"
+        self.performance_log_file = "logs/performance_metrics.json"
 
-        :param trade_log_file: Path to the AI trade history log.
-        """
-        self.trade_log_file = trade_log_file
+        # Ensure log directory exists
+        os.makedirs("logs", exist_ok=True)
 
         # Setup logging
         logging.basicConfig(
@@ -20,75 +25,77 @@ class PerformanceTracker:
             format="%(asctime)s - %(levelname)s - %(message)s"
         )
 
-    def compute_performance_metrics(self):
-        """ Computes AI trading performance metrics. """
+    def log_trade(self, trade_result):
+        """
+        Logs executed trades for AI performance analysis.
+        :param trade_result: Dictionary containing executed trade details.
+        """
+        trade_data = self._load_trade_log()
+        trade_data.append(trade_result)
+
+        with open(self.trade_log_file, "w") as f:
+            json.dump(trade_data, f, indent=4)
+
+        logging.info(f"Logged trade: {trade_result}")
+
+    def calculate_success_metrics(self):
+        """
+        Computes AI strategy performance metrics.
+        :return: Dictionary of success metrics.
+        """
+        trade_data = self._load_trade_log()
+
+        if not trade_data:
+            return {"Win Rate": 0, "Profit Factor": 0, "Total Profit": 0, "Max Drawdown": 0}
+
+        df = pd.DataFrame(trade_data)
+
+        # Ensure required columns exist
+        if "execution_price" not in df.columns or "status" not in df.columns:
+            return {"Win Rate": 0, "Profit Factor": 0, "Total Profit": 0, "Max Drawdown": 0}
+
+        # Calculate PnL for each trade
+        df["pnl"] = df.apply(lambda row: row["execution_price"] * row["quantity"] if row["action"] == "buy" else -row["execution_price"] * row["quantity"], axis=1)
+
+        # Define key metrics
+        total_trades = len(df)
+        winning_trades = len(df[df["pnl"] > 0])
+        losing_trades = total_trades - winning_trades
+        total_profit = df["pnl"].sum()
+        max_drawdown = df["pnl"].min()
+        profit_factor = total_profit / abs(df[df["pnl"] < 0]["pnl"].sum()) if losing_trades > 0 else 0
+        win_rate = (winning_trades / total_trades) * 100 if total_trades > 0 else 0
+
+        success_metrics = {
+            "Total Trades": total_trades,
+            "Win Rate": round(win_rate, 2),
+            "Profit Factor": round(profit_factor, 2),
+            "Total Profit": round(total_profit, 2),
+            "Max Drawdown": round(max_drawdown, 2)
+        }
+
+        # Save metrics
+        with open(self.performance_log_file, "w") as f:
+            json.dump(success_metrics, f, indent=4)
+
+        logging.info(f"Updated AI performance metrics: {success_metrics}")
+        return success_metrics
+
+    def generate_performance_report(self):
+        """
+        Generates a trading performance report.
+        :return: Dictionary of performance report data.
+        """
+        metrics = self.calculate_success_metrics()
+        return metrics
+
+    def _load_trade_log(self):
+        """
+        Loads existing trade history.
+        :return: List of trade records.
+        """
         try:
-            df = pd.read_csv(self.trade_log_file)
-
-            if df.empty:
-                logging.warning("No trade data found for performance tracking.")
-                return {}
-
-            df["Profit"] = df["Sell Price"] - df["Buy Price"]
-            df["Cumulative Profit"] = df["Profit"].cumsum()
-
-            total_trades = len(df)
-            win_trades = len(df[df["Profit"] > 0])
-            loss_trades = total_trades - win_trades
-            win_rate = round((win_trades / total_trades) * 100, 2) if total_trades > 0 else 0
-
-            total_profit = df["Profit"].sum()
-            sharpe_ratio = self._calculate_sharpe_ratio(df["Profit"])
-            max_drawdown = self._calculate_max_drawdown(df["Cumulative Profit"])
-            profit_factor = round(df[df["Profit"] > 0]["Profit"].sum() / abs(df[df["Profit"] < 0]["Profit"].sum()), 2) if loss_trades > 0 else "N/A"
-
-            performance_metrics = {
-                "Total Trades": total_trades,
-                "Win Rate (%)": win_rate,
-                "Total Profit ($)": round(total_profit, 2),
-                "Sharpe Ratio": round(sharpe_ratio, 2),
-                "Max Drawdown ($)": round(max_drawdown, 2),
-                "Profit Factor": profit_factor
-            }
-
-            logging.info("Performance Metrics Calculated: %s", performance_metrics)
-            return performance_metrics
-
-        except Exception as e:
-            logging.error("Failed to compute performance metrics: %s", e)
-            return {}
-
-    def _calculate_sharpe_ratio(self, returns, risk_free_rate=0.01):
-        """ Computes the Sharpe Ratio. """
-        try:
-            excess_returns = returns - risk_free_rate
-            std_dev = np.std(returns)
-
-            if std_dev == 0:
-                return 0  # Avoid division by zero
-
-            return np.mean(excess_returns) / std_dev
-
-        except Exception as e:
-            logging.error("Error calculating Sharpe ratio: %s", e)
-            return 0
-
-    def _calculate_max_drawdown(self, cumulative_profits):
-        """ Computes the Maximum Drawdown (Largest Drop from Peak). """
-        try:
-            peak = cumulative_profits.cummax()
-            drawdown = (cumulative_profits - peak)
-            return drawdown.min()
-
-        except Exception as e:
-            logging.error("Error calculating max drawdown: %s", e)
-            return 0
-
-# Example Usage
-if __name__ == "__main__":
-    performance_tracker = PerformanceTracker()
-
-    metrics = performance_tracker.compute_performance_metrics()
-    if metrics:
-        for key, value in metrics.items():
-            print(f"{key}: {value}")
+            with open(self.trade_log_file, "r") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []

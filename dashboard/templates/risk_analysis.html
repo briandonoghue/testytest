@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Risk Analysis - Trading Bot</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        function updateRiskMetrics() {
+            $.get("/risk_metrics", function(data) {
+                $("#current_risk").text("Current Portfolio Risk: " + data["Current Risk Level"] + "%");
+                $("#volatility").text("Market Volatility: " + data["Market Volatility"] + "%");
+                $("#stop_loss").text("AI Stop-Loss Buffer: " + data["Stop-Loss Buffer"] + "%");
+                $("#take_profit").text("AI Take-Profit Buffer: " + data["Take-Profit Buffer"] + "%");
+                updateRiskChart(data);
+            });
+        }
+
+        function updateRiskChart(data) {
+            let ctx = document.getElementById("riskChart").getContext("2d");
+
+            new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: ["Current Risk Level", "Market Volatility", "Stop-Loss Buffer", "Take-Profit Buffer"],
+                    datasets: [{
+                        label: "AI Risk Management",
+                        data: [data["Current Risk Level"], data["Market Volatility"], data["Stop-Loss Buffer"], data["Take-Profit Buffer"]],
+                        backgroundColor: ["red", "orange", "blue", "green"],
+                        borderColor: ["red", "orange", "blue", "green"],
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        $(document).ready(function() {
+            updateRiskMetrics();
+            setInterval(updateRiskMetrics, 30000);
+        });
+    </script>
+</head>
+<body>
+    <h1>AI Risk Analysis Dashboard</h1>
+
+    <h2>Current Risk Metrics</h2>
+    <p id="current_risk">Current Portfolio Risk: Loading...</p>
+    <p id="volatility">Market Volatility: Loading...</p>
+    <p id="stop_loss">AI Stop-Loss Buffer: Loading...</p>
+    <p id="take_profit">AI Take-Profit Buffer: Loading...</p>
+
+    <h2>Risk Analysis Visualization</h2>
+    <canvas id="riskChart" width="400" height="200"></canvas>
+</body>
+</html>
