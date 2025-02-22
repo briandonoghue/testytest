@@ -2,7 +2,10 @@ import logging
 import time
 import requests
 import random
-from utilities.config_loader import load_config
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
 
 class MarketData:
     """ AI-optimized market data retrieval system """
@@ -13,8 +16,8 @@ class MarketData:
         :param config: Configuration dictionary.
         """
         self.config = config
-        self.data_sources = config["market_data"].get("data_sources", ["yahoo_finance", "coin_gecko", "binance_public_api"])
-        self.fetch_frequency = config["market_data"].get("fetch_frequency", "1min")
+        self.data_sources = config["settings"]["market_data"].get("data_sources", ["yahoo_finance", "coin_gecko", "binance_public_api"])
+        self.fetch_frequency = config["settings"]["market_data"].get("fetch_frequency", "1min")
         self.api_keys = config.get("api_keys", {})
 
         # Setup logging
@@ -23,6 +26,23 @@ class MarketData:
             level=logging.INFO,
             format="%(asctime)s - %(levelname)s - %(message)s"
         )
+    def get_price_change_percentage(self, symbol, period="30d"):
+        """
+        Calculates the percentage change in price over a given period.
+        :param symbol: Trading asset symbol.
+        :param period: Time period (e.g., "30d").
+        :return: The percentage change in price, or None if unable to calculate.
+        """
+        historical_data = self.get_historical_data(symbol, period)
+        if historical_data and len(historical_data["price"]) > 1:
+            initial_price = historical_data["price"][0]  # The first price in the period
+            latest_price = historical_data["price"][-1]  # The last price in the period
+            price_change_percentage = ((latest_price - initial_price) / initial_price) * 100
+            logging.info(f"Price change for {symbol} over {period}: {price_change_percentage:.2f}%")
+            return price_change_percentage
+        else:
+            logging.warning(f"Unable to calculate price change for {symbol} over {period}.")
+            return None
 
     def get_latest_price(self, symbol):
         """
@@ -120,12 +140,61 @@ class MarketData:
         """
         Retrieves historical market data for AI model training.
         :param symbol: Trading asset symbol.
-        :param period: Time period (e.g., "30d").
+        :param period: Time period (e.g., "30d", "1y").
         :return: DataFrame containing historical price data or None.
         """
         try:
-            price_list = [self.get_latest_price(symbol) for _ in range(30)]
-            return {"price": price_list, "symbol": symbol}
+            # Use Yahoo Finance API to fetch historical data
+            data = yf.download(symbol, period=period, interval="1d")
+            if data.empty:
+                logging.warning(f"No data returned for {symbol} in the period {period}.")
+                return None
+            
+            # Return data as a DataFrame for easier processing
+            data = data[['Close']]  # You can modify this to include more columns like Open, High, Low, etc.
+            data.reset_index(inplace=True)
+            data.rename(columns={"Date": "timestamp", "Close": "price"}, inplace=True)
+
+            # Optional: Convert the data to a dictionary with symbol and price list if needed
+            historical_data = {"symbol": symbol, "price": data["price"].tolist(), "timestamp": data["timestamp"].tolist()}
+            return historical_data
+
         except Exception as e:
             logging.error(f"Failed to retrieve historical data for {symbol}: {e}")
             return None
+
+    def get_asset_volatility(self, symbol, period=14):
+        """
+        Retrieves the asset's volatility over the last 'period' days.
+        :param symbol: Trading asset symbol.
+        :param period: Number of past days to calculate volatility (default 14 days).
+        :return: The calculated volatility (standard deviation of daily returns).
+        """
+        price_data = self.get_historical_data(symbol, period)
+        if price_data is None or len(price_data["price"]) < period:
+            return None
+
+        # Calculate daily returns
+        daily_returns = np.diff(price_data["price"]) / price_data["price"][:-1]
+
+        # Calculate volatility (standard deviation of daily returns)
+        volatility = np.std(daily_returns)
+        return round(volatility, 4)  # Rounded for better readability
+
+    def get_market_conditions(self, symbol):
+        """
+        Retrieves market conditions, including price and volatility.
+        :param symbol: Trading asset symbol.
+        :return: Dictionary with price and volatility.
+        """
+        price = self.get_latest_price(symbol)
+        volatility = self.get_asset_volatility(symbol)
+
+        if price is None or volatility is None:
+            logging.error(f"Failed to fetch market conditions for {symbol}.")
+            return None
+
+        return {
+            "price": price,
+            "volatility": volatility
+        }

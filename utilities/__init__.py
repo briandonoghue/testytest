@@ -15,5 +15,6 @@ __all__ = [
     "config_utils",
     "math_utils",
     "time_utils",
-    "notification_manage"
+    "notification_manage",
+"config_loader"
 ]

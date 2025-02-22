@@ -1,8 +1,8 @@
 import logging
 import pandas as pd
 import numpy as np
-from core.market_data import MarketData
-from core.risk_manager import RiskManager
+from market_data import MarketData
+from risk_manager import RiskManager
 from utilities.config_loader import load_config
 
 class Backtester:

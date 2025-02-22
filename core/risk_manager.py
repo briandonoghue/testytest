@@ -1,8 +1,7 @@
 import logging
 import numpy as np
-from utilities.config_loader import load_config
-from core.market_data import MarketData
-from core.performance_tracker import PerformanceTracker
+from market_data import MarketData
+from performance_tracker import PerformanceTracker
 
 class RiskManager:
     """ AI-driven risk management and portfolio rebalancing system """
@@ -16,7 +15,7 @@ class RiskManager:
         self.market_data = MarketData(config)
         self.performance_tracker = PerformanceTracker(config)
         self.max_drawdown = config["risk_management"].get("max_drawdown", 5)  # Max loss percentage per asset
-        self.auto_rebalance = config["bot_settings"].get("enable_auto_rebalance", True)
+        self.auto_rebalance = config["settings"].get("enable_auto_rebalance", True)
         self.rebalance_threshold = config["risk_management"].get("rebalance_threshold", 10)  # % deviation threshold
 
         # Setup logging

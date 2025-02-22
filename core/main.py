@@ -1,17 +1,17 @@
 import logging
 import json
-from core.trade_execution import TradeExecution
-from core.trade_signal_generator import TradeSignalGenerator
-from core.ml_self_training import MLSelfTrainer
-from core.ai_trade_confidence import AITradeConfidenceScorer
-from core.ai_trade_explanation import AITradeExplanation
-from core.market_anomaly_detection import MarketAnomalyDetector
-from core.ai_position_sizing import AIPositionSizer
-from core.ai_market_regime_adaptation import AIMarketRegimeAdapter
-from core.ai_trade_timing import AITradeTimingOptimizer
-from core.ai_liquidity_tracking import AILiquidityTracker
-from core.ai_stop_loss_optimization import AIStopLossOptimizer
-from core.ai_take_profit_optimization import AITakeProfitOptimizer
+from trade_executor import TradeExecutor
+from trade_signal_generator import TradeSignalGenerator
+from ml_self_training import MLSelfTrainer
+from ai_trade_confidence import AITradeConfidenceScorer
+from ai_trade_explanation import AITradeExplanation
+from market_anomaly_detection import MarketAnomalyDetector
+from ai_position_sizing import AIPositionSizer
+from ai_market_regime_adaptation import AIMarketRegimeAdapter
+from ai_trade_timing import AITradeTimingOptimizer
+from ai_liquidity_tracking import AILiquidityTracker
+from ai_stop_loss_optimization import AIStopLossOptimizer
+from ai_take_profit_optimization import AITakeProfitOptimizer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -21,7 +21,7 @@ with open("config/config.json", "r") as f:
     config = json.load(f)
 
 # Initialize core AI components
-trade_execution = TradeExecution(config)
+trade_execution = TradeExecutor(config)
 trade_signal_generator = TradeSignalGenerator(config)
 ml_trainer = MLSelfTrainer(config)
 confidence_scorer = AITradeConfidenceScorer(config)
@@ -36,26 +36,31 @@ take_profit_optimizer = AITakeProfitOptimizer(config)
 
 def main():
     logging.info("🔹 AI Trading Bot Starting...")
-
+    
     # Step 1: Detect Market Regime and Adjust Strategy
     logging.info("📊 Detecting current market regime...")
-    market_conditions = trade_execution.get_market_conditions()
-    market_regime = market_adapter.detect_market_regime(market_conditions)
-    logging.info(f"✅ Market Regime Identified: {market_regime}")
-
-    # Step 2: Select the Best Strategy Based on Market Regime
-    selected_strategy = market_adapter.adapt_strategy_to_market(market_conditions)
-    logging.info(f"🛠️ Using Strategy: {selected_strategy['type']}")
-
-    # Step 3: Generate Trade Signals
-    trading_assets = config["assets"]["trade_assets"]
+    
+    trading_assets = config["assets"]["primary_assets"]
+    
     for asset in trading_assets:
+        # Get market conditions for the current asset
+        market_conditions = trade_execution.market_data.get_market_conditions(symbol=asset)
+        
+        # Detect market regime based on the market conditions
+        market_regime = market_adapter.detect_market_regime(market_conditions)
+        logging.info(f"✅ Market Regime Identified for {asset}: {market_regime}")
+
+        # Step 2: Select the Best Strategy Based on Market Regime
+        selected_strategy = market_adapter.adapt_strategy_to_market(market_conditions)
+        logging.info(f"🛠️ Using Strategy for {asset}: {selected_strategy['type']}")
+
+        # Step 3: Generate Trade Signals
         logging.info(f"📊 Generating trade signal for {asset}...")
         trade_signal = trade_signal_generator.generate_signal(asset, selected_strategy)
 
         # Step 4: Calculate Trade Confidence Score
         confidence_score = confidence_scorer.calculate_confidence_score(trade_signal)
-        logging.info(f"🔎 Trade Confidence Score: {confidence_score:.2f}")
+        logging.info(f"🔎 Trade Confidence Score for {asset}: {confidence_score:.2f}")
 
         if confidence_score < config["trading_settings"]["min_confidence_threshold"]:
             logging.info(f"⚠️ Skipping trade for {asset} due to low confidence.")
@@ -63,7 +68,7 @@ def main():
 
         # Step 5: Explain Trade Decision
         trade_explanation = trade_explainer.generate_explanation(trade_signal)
-        logging.info(f"📝 Trade Explanation: {trade_explanation}")
+        logging.info(f"📝 Trade Explanation for {asset}: {trade_explanation}")
 
         # Step 6: Detect Market Anomalies
         anomaly_detected = anomaly_detector.check_market_anomalies(asset)
@@ -78,7 +83,7 @@ def main():
             "risk_per_trade": config["risk_management"]["max_trade_risk"],
             "stop_loss_distance": trade_signal.get("stop_loss_distance", 0)
         })
-        logging.info(f"📏 Calculated Trade Size: {position_size}")
+        logging.info(f"📏 Calculated Trade Size for {asset}: {position_size}")
 
         # Step 8: Optimize Entry Timing
         optimized_entry = timing_optimizer.identify_best_entry_time(trade_signal)
@@ -105,6 +110,7 @@ def main():
         ml_trainer.train_model()
 
     logging.info("🚀 AI Trading Bot Execution Completed.")
+
 
 if __name__ == "__main__":
     main()
